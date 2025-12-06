@@ -1,0 +1,111 @@
+services:
+  # =====================================================
+  # 1. BASE DE DATOS (MySQL)
+  # =====================================================
+  mysql:
+    image: mysql:8.0
+    container_name: capitalhub-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: admin
+      MYSQL_DATABASE: capitalhub
+      MYSQL_PASSWORD: admin
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-padmin"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - capitalhub-network
+
+  # =====================================================
+  # 2. ALMACENAMIENTO (MinIO - Similar a S3)
+  # =====================================================
+  minio:
+    image: minio/minio
+    container_name: capitalhub-minio
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - capitalhub-network
+
+  # =====================================================
+  # 3. BACKEND (Spring Boot)
+  # =====================================================
+  backend:
+    build:
+      context: ../backend
+      dockerfile: ../deploy/Dockerfile.backend
+    container_name: capitalhub-backend
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/capitalhub?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: admin
+      SPRING_JPA_HIBERNATE_DDL_AUTO: none
+      SPRING_JPA_SHOW_SQL: "false"
+      SPRING_FLYWAY_ENABLED: "true"
+      SPRING_FLYWAY_BASELINE_ON_MIGRATE: "true"
+      JWT_SECRET: "404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970"
+      JWT_EXPIRATION: "86400000"
+      MINIO_URL: http://minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_BUCKET: capitalhub-media
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - capitalhub-network
+
+  # =====================================================
+  # 4. FRONTEND (React + Nginx)
+  # =====================================================
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: ../deploy/Dockerfile.frontend
+      args:
+        VITE_API_BASE_URL: ""
+    container_name: capitalhub-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - capitalhub-network
+
+# =====================================================
+# VOLÚMENES
+# =====================================================
+volumes:
+  mysql_data:
+  minio_data:
+
+# =====================================================
+# RED
+# =====================================================
+networks:
+  capitalhub-network:
+    driver: bridge
