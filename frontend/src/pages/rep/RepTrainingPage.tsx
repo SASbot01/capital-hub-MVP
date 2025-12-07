@@ -1,102 +1,49 @@
 // frontend/src/pages/rep/RepTrainingPage.tsx
+import { useEffect, useState } from "react";
 import Topbar from "../../layouts/Topbar";
-
-interface Lesson {
-  title: string;
-  duration: string;
-  status: "completed" | "in-progress" | "locked";
-}
-
-interface Course {
-  id: string;
-  title: string;
-  level: "Básico" | "Intermedio" | "Avanzado";
-  focus: string;
-  progress: number; // 0–100
-  lessons: Lesson[];
-}
+import { getTrainingCourses, completeLesson, type Course, type Lesson } from "../../api/training";
+import { Loader2, CheckCircle2 } from "lucide-react";
 
 export default function RepTrainingPage() {
-  // Datos mock para que se vea vivo (luego irán al backend)
-  const courses: Course[] = [
-    {
-      id: "evergreen-closer",
-      title: "Cierre en lanzamientos evergreen",
-      level: "Intermedio",
-      focus: "Closer",
-      progress: 72,
-      lessons: [
-        {
-          title: "Framework de llamada de cierre",
-          duration: "14 min",
-          status: "completed",
-        },
-        {
-          title: "Gestión de objeciones frecuentes",
-          duration: "18 min",
-          status: "completed",
-        },
-        {
-          title: "Cierre en una sola llamada",
-          duration: "22 min",
-          status: "in-progress",
-        },
-        {
-          title: "Seguimiento post-llamada y upsell",
-          duration: "16 min",
-          status: "locked",
-        },
-      ],
-    },
-    {
-      id: "setter-pro",
-      title: "Prospección y agendas para Setters",
-      level: "Básico",
-      focus: "Setter",
-      progress: 35,
-      lessons: [
-        {
-          title: "Mentalidad del setter de alto rendimiento",
-          duration: "10 min",
-          status: "completed",
-        },
-        {
-          title: "Script base de llamadas frías",
-          duration: "15 min",
-          status: "in-progress",
-        },
-        {
-          title: "Uso del CRM y seguimiento diario",
-          duration: "20 min",
-          status: "locked",
-        },
-      ],
-    },
-    {
-      id: "call-caller",
-      title: "Optimización de call calling en campañas frías",
-      level: "Avanzado",
-      focus: "Setter / Closer",
-      progress: 10,
-      lessons: [
-        {
-          title: "KPIs clave en call calling",
-          duration: "12 min",
-          status: "in-progress",
-        },
-        {
-          title: "Patrones de voz y ritmo",
-          duration: "19 min",
-          status: "locked",
-        },
-        {
-          title: "Sistemas de seguimiento y batches",
-          duration: "17 min",
-          status: "locked",
-        },
-      ],
-    },
-  ];
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [activeCourseId, setActiveCourseId] = useState<string | null>(null);
+  const [processingLessonId, setProcessingLessonId] = useState<number | null>(null);
+
+  useEffect(() => {
+    fetchCourses();
+  }, []);
+
+  const fetchCourses = async () => {
+    try {
+      setLoading(true);
+      const data = await getTrainingCourses();
+      setCourses(data);
+      if (data.length > 0 && !activeCourseId) {
+        // Default to first course or logic to find active one
+        setActiveCourseId(data[0].id);
+      }
+    } catch (error) {
+      console.error("Failed to fetch courses", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCompleteLesson = async (lessonId: number) => {
+    try {
+      setProcessingLessonId(lessonId);
+      await completeLesson(lessonId);
+      // Refresh state to unlock next lesson and update progress
+      await fetchCourses();
+    } catch (error) {
+      console.error("Failed to complete lesson", error);
+    } finally {
+      setProcessingLessonId(null);
+    }
+  };
+
+  const activeCourse = courses.find((c) => c.id === activeCourseId) || courses[0];
 
   const totalCourses = courses.length;
   const completedCourses = courses.filter((c) => c.progress === 100).length;
@@ -105,9 +52,7 @@ export default function RepTrainingPage() {
       courses.reduce((acc, c) => acc + c.progress, 0) / courses.length
     ) || 0;
 
-  const activeCourse = courses[0];
-
-  const badgeColor = (level: Course["level"]) => {
+  const badgeColor = (level: string) => {
     switch (level) {
       case "Básico":
         return "bg-neutral-100 text-neutral-700";
@@ -115,23 +60,31 @@ export default function RepTrainingPage() {
         return "bg-black text-white";
       case "Avanzado":
         return "bg-neutral-900 text-white";
+      default:
+        return "bg-neutral-100 text-neutral-700";
     }
   };
 
-  const pillForStatus = (status: Lesson["status"]) => {
-    if (status === "completed") {
+  const pillForStatus = (lesson: Lesson) => {
+    if (lesson.status === "completed") {
       return (
         <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-emerald-50 text-[10px] font-medium text-emerald-700">
           Completada
         </span>
       );
     }
-    if (status === "in-progress") {
+    if (lesson.status === "in-progress") {
+      // Show complete button if it's in-progress
       return (
-        <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-amber-50 text-[10px] font-medium text-amber-700">
-          En curso
-        </span>
-      );
+        <button
+          onClick={() => handleCompleteLesson(lesson.id)}
+          disabled={processingLessonId === lesson.id}
+          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-black text-[10px] font-medium text-white hover:bg-neutral-800 transition-colors disabled:opacity-50"
+        >
+          {processingLessonId === lesson.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />}
+          Completar
+        </button>
+      )
     }
     return (
       <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-neutral-100 text-[10px] font-medium text-neutral-500">
@@ -139,6 +92,19 @@ export default function RepTrainingPage() {
       </span>
     );
   };
+
+  if (loading) {
+    return <div className="flex items-center justify-center p-12"><Loader2 className="w-6 h-6 animate-spin text-neutral-400" /></div>;
+  }
+
+  if (!courses.length) {
+    return (
+      <div className="space-y-6">
+        <Topbar title="Formación" subtitle="Cursos para mejorar tu performance" />
+        <div className="text-center py-12 text-neutral-500">No hay cursos asignados todavía.</div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -195,95 +161,89 @@ export default function RepTrainingPage() {
       {/* GRID PRINCIPAL: CURSO ACTIVO + LISTA CURSOS */}
       <section className="grid grid-cols-1 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-6 mb-10">
         {/* CURSO ACTIVO */}
-        <div className="bg-white rounded-3xl shadow-sm border border-neutral-200 px-6 py-5">
-          <h3 className="text-sm font-medium text-neutral-900 mb-1.5">
-            Curso en progreso
-          </h3>
-          <p className="text-xs text-neutral-500 mb-4">
-            Continúa donde lo dejaste. Más adelante esta sección se conectará
-            con tu progreso real.
-          </p>
+        {activeCourse && (
+          <div className="bg-white rounded-3xl shadow-sm border border-neutral-200 px-6 py-5">
+            <h3 className="text-sm font-medium text-neutral-900 mb-1.5">
+              Curso seleccionado
+            </h3>
+            <p className="text-xs text-neutral-500 mb-4">
+              {/* Description removed as it is not in the Course interface yet */}
+              {"Continúa donde lo dejaste."}
+            </p>
 
-          <div className="rounded-2xl border border-neutral-200 px-4 py-4 mb-4">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
-              <div>
-                <p className="text-xs text-neutral-500 mb-1">
-                  {activeCourse.focus}
-                </p>
-                <h4 className="text-base font-semibold text-neutral-900">
-                  {activeCourse.title}
-                </h4>
-                <div className="mt-1 flex items-center gap-2">
-                  <span
-                    className={
-                      "inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-medium " +
-                      badgeColor(activeCourse.level)
-                    }
-                  >
-                    {activeCourse.level}
-                  </span>
-                  <span className="text-[11px] text-neutral-400">
-                    {activeCourse.lessons.length} lecciones
-                  </span>
-                </div>
-              </div>
-
-              <div className="flex flex-col items-start sm:items-end gap-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-neutral-500">
-                    Progreso
-                  </span>
-                  <span className="text-sm font-semibold text-neutral-900">
-                    {activeCourse.progress}%
-                  </span>
-                </div>
-                <div className="w-40 h-1.5 rounded-full bg-neutral-100 overflow-hidden">
-                  <div
-                    className="h-full bg-neutral-900"
-                    style={{ width: `${activeCourse.progress}%` }}
-                  />
-                </div>
-                <button className="mt-1 inline-flex items-center justify-center px-4 py-1.5 rounded-full bg-black text-white text-xs font-medium hover:bg-neutral-800 transition-colors">
-                  Reanudar curso
-                </button>
-              </div>
-            </div>
-
-            <div className="border-t border-neutral-100 pt-3">
-              <p className="text-xs font-medium text-neutral-900 mb-2">
-                Lecciones
-              </p>
-              <div className="space-y-2">
-                {activeCourse.lessons.map((lesson, index) => (
-                  <div
-                    key={lesson.title}
-                    className="flex items-center justify-between text-xs py-1.5"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="text-[11px] text-neutral-400 w-4">
-                        {index + 1}.
-                      </span>
-                      <span className="text-neutral-800">
-                        {lesson.title}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-[11px] text-neutral-400">
-                        {lesson.duration}
-                      </span>
-                      {pillForStatus(lesson.status)}
-                    </div>
+            <div className="rounded-2xl border border-neutral-200 px-4 py-4 mb-4">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
+                <div>
+                  <p className="text-xs text-neutral-500 mb-1">
+                    {activeCourse.focus}
+                  </p>
+                  <h4 className="text-base font-semibold text-neutral-900">
+                    {activeCourse.title}
+                  </h4>
+                  <div className="mt-1 flex items-center gap-2">
+                    <span
+                      className={
+                        "inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-medium " +
+                        badgeColor(activeCourse.level)
+                      }
+                    >
+                      {activeCourse.level}
+                    </span>
+                    <span className="text-[11px] text-neutral-400">
+                      {activeCourse.lessons.length} lecciones
+                    </span>
                   </div>
-                ))}
+                </div>
+
+                <div className="flex flex-col items-start sm:items-end gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-neutral-500">
+                      Progreso
+                    </span>
+                    <span className="text-sm font-semibold text-neutral-900">
+                      {activeCourse.progress}%
+                    </span>
+                  </div>
+                  <div className="w-40 h-1.5 rounded-full bg-neutral-100 overflow-hidden">
+                    <div
+                      className="h-full bg-neutral-900"
+                      style={{ width: `${activeCourse.progress}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="border-t border-neutral-100 pt-3">
+                <p className="text-xs font-medium text-neutral-900 mb-2">
+                  Lecciones
+                </p>
+                <div className="space-y-2">
+                  {activeCourse.lessons.map((lesson, index) => (
+                    <div
+                      key={lesson.id}
+                      className="flex items-center justify-between text-xs py-1.5"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] text-neutral-400 w-4">
+                          {index + 1}.
+                        </span>
+                        <span className="text-neutral-800">
+                          {lesson.title}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-[11px] text-neutral-400">
+                          {lesson.duration}
+                        </span>
+                        {pillForStatus(lesson)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
-
-          <p className="text-[11px] text-neutral-400">
-            Cuando termines todas las lecciones de un curso, podrás descargar
-            tu certificado en PDF desde esta misma página.
-          </p>
-        </div>
+        )}
 
         {/* LISTA DE CURSOS */}
         <div className="bg-white rounded-3xl shadow-sm border border-neutral-200 px-6 py-5">
@@ -291,8 +251,7 @@ export default function RepTrainingPage() {
             Catálogo asignado
           </h3>
           <p className="text-xs text-neutral-500 mb-4">
-            Estos cursos están preparados para roles de Setter, Closer y
-            Call Caller dentro de CapitalHub.
+            Selecciona un curso para ver sus detalles.
           </p>
 
           <div className="space-y-3">
@@ -300,7 +259,8 @@ export default function RepTrainingPage() {
               <button
                 key={course.id}
                 type="button"
-                className="w-full text-left rounded-2xl border border-neutral-200 px-4 py-3 hover:border-neutral-300 hover:bg-neutral-50 transition-colors"
+                onClick={() => setActiveCourseId(course.id)}
+                className={`w-full text-left rounded-2xl border px-4 py-3 hover:border-neutral-300 transition-colors ${activeCourseId === course.id ? "border-neutral-900 bg-neutral-50" : "border-neutral-200 bg-white"}`}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -319,19 +279,13 @@ export default function RepTrainingPage() {
                       >
                         {course.level}
                       </span>
-                      <span className="text-[11px] text-neutral-400">
-                        {course.lessons.length} lecciones
-                      </span>
                     </div>
                   </div>
                   <div className="flex flex-col items-end gap-1">
-                    <span className="text-xs text-neutral-500">
-                      Progreso
-                    </span>
                     <span className="text-sm font-semibold text-neutral-900">
                       {course.progress}%
                     </span>
-                    <div className="w-24 h-1.5 rounded-full bg-neutral-100 overflow-hidden">
+                    <div className="w-16 h-1 rounded-full bg-neutral-100 overflow-hidden">
                       <div
                         className="h-full bg-neutral-900"
                         style={{ width: `${course.progress}%` }}
